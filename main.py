@@ -5,10 +5,40 @@ from datetime import date, datetime
 # ページの基本設定
 # ======================================
 st.set_page_config(
-    page_title="Brief of the Day", #名前は適当です。その日の要点を詰めてるイメージの名前にしてみました
+    page_title="OTASUKE", #名前は適当です。その日の要点を詰めてるイメージの名前にしてみました
     page_icon="☀️",
     layout="centered",
 )
+
+#======================================
+#CSS
+#======================================
+st.markdown("""
+<style>
+.info-card {
+    background-color: #FFFFFF;
+    padding: 18px;
+    border-radius: 14px;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.05);
+    margin-bottom: 20px;
+}
+
+.news-card {
+    background-color: #FFFFFF;
+    padding: 18px;
+    border-radius: 14px;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.05);
+    margin-bottom: 16px;
+}
+
+[data-testid="stAppViewContainer"] {
+    background: #FFFFEF;  /* うすい黄色背景 */
+}
+
+
+</style>
+""", unsafe_allow_html=True)
+
 # ======================================
 # セッションの初期化
 # ======================================
@@ -54,7 +84,7 @@ CATEGORY_LIST = [
 def render_header():
     cols = st.columns([3, 1])
     with cols[0]:
-        st.markdown("### Brief of the Day")
+        st.markdown("### OTASUKE")
     with cols[1]:
         st.markdown(
             """
@@ -112,7 +142,7 @@ def step_birthdate():
 # ======================================
 def step_home_region():
     st.markdown('<div class="main-card">', unsafe_allow_html=True)
-    st.markdown("#### お住まいの地域を教えてください/勤務地を教えてください")
+    st.markdown("#### お住まいの地域を教えてください")
     st.caption("地域の天気予報をお届けします")
 
     home = st.selectbox("都道府県", options=["選択してください"] + PREF_LIST)
@@ -141,14 +171,23 @@ def step_categories():
     st.markdown("#### 興味のあるニュースジャンルを選択")
     st.caption("複数選択可能です。選択したジャンルを優先的にお届けします")
 
-    selected = st.multiselect("ジャンル", options=CATEGORY_LIST)
-    st.session_state.settings["categories"] = selected
+    options = CATEGORY_LIST  # 既存リストを使用
 
-    # 選択中の数を表示
-    st.markdown(f"<p style='font-size:13px;color:#6b7280;'>選択中：{len(selected)}個</p>",
-                unsafe_allow_html=True)
+    selection = st.pills(
+        label="ジャンル",
+        options=options,
+        selection_mode="multi"
+    )
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    # 選択数
+    st.markdown(
+        f"<p style='font-size:13px;color:#6b7280;'>選択中：{len(selection)}個</p>",
+        unsafe_allow_html=True
+    )
+
+    # 必要であれば session_state に保存
+    st.session_state.settings["categories"] = selection
+
 
 # ======================================
 # ダッシュボード（メイン画面）
