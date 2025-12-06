@@ -1,5 +1,10 @@
 import streamlit as st
 from datetime import date, datetime
+from weather import weather_api, get_weather_icon
+import os
+from dotenv import load_dotenv
+from news_api import news_get
+from hour_calc import diff_hour
 
 # ======================================
 # ページの基本設定
@@ -194,7 +199,10 @@ def step_categories():
 # ======================================
 def render_dashboard():
     render_header()
+    load_dotenv()
+    NEWS_API_KEY = os.getenv("NEWS_API_KEY")
     today = datetime.today()
+    
     st.markdown(
         f"**{today.strftime('%m月%d日（%a）')}**",
     )
@@ -203,15 +211,18 @@ def render_dashboard():
 
     # 天気
     home_pref = st.session_state.settings.get("home_pref") or "東京" #選択された地域
+    telop, max_temp, min_temp = weather_api(home_pref)
+    icon = get_weather_icon(telop)
+
     st.markdown(
         f"""
         <div class="info-card weather-card">
-            <div style="font-size:13px;">☁️ 今日の天気</div>
+            <div style="font-size:13px;">{icon} 今日の天気</div>
             <div style="font-size:14px;margin-top:4px;">{home_pref}</div>
             <div style="font-size:32px;font-weight:600;margin-top:4px;">
-                --° <span style="font-size:18px;">/ --°</span>
+                {max_temp}° <span style="font-size:18px;">/ {min_temp}°</span>
             </div>
-            <div style="font-size:13px;margin-top:4px;">天気情報をここに表示（API連携予定）</div>
+            <div style="font-size:13px;margin-top:4px;">{icon}{telop}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -235,26 +246,38 @@ def render_dashboard():
 
     st.markdown("#### 🔸 あなたへのおすすめニュース")
 
+    select_categories = st.session_state.settings["categories"]
+    articles = news_get(NEWS_API_KEY, select_categories)
+
     # ニュースカード（ダミーを2件ほど）
-    for i in range(2):
+    
+    for i in range(len(articles)):
+        delta = diff_hour(articles[i]["publishedAt"])
+        st.image(
+            articles[i]["urlToImage"],
+            caption="Web上の画像",  # キャプション（画像の説明）を追加できます
+            use_container_width=True # 列幅に合わせて画像を自動調整します
+        )
         st.markdown(
             f"""
             <div class="news-card">
-                <div style="font-size:11px;color:#6b7280;margin-bottom:4px;">
-                    テクノロジー
-                </div>
                 <div style="font-size:15px;font-weight:600;margin-bottom:4px;">
-                    ここにニュースタイトルが入ります（サンプル{i+1}）
+                    {articles[i]["title"]}
                 </div>
                 <div style="font-size:13px;color:#4b5563;margin-bottom:6px;">
-                    ニュースの要約テキストをここに表示します。APIから取得した内容を差し込む想定です。
+                    {articles[i]["description"]}
                 </div>
-                <div style="font-size:11px;color:#9ca3af;">
-                    メディア名・○時間前
+                <div style="font-size:11px;color:#4b5563;margin-bottom:6px;">
+                    {delta}時間前
                 </div>
             </div>
             """,
             unsafe_allow_html=True,
+        )
+        st.link_button(
+            label="記事詳細へ", # ボタンに表示するテキスト
+            url=articles[i]["url"],           # リンク先のURL
+            help="クリックすると記事の詳細ページに移動します" # ツールチップとして表示されるテキスト
         )
 
 # ======================================
