@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 from news_api import news_get
 from hour_calc import diff_hour
+from horoscope import get_horoscope
 
 # ======================================
 # ページの基本設定
@@ -229,15 +230,33 @@ def render_dashboard():
     )
 
     # 星占い （記載は一例、APIで取得できる情報を記載する）
+    birth_month = st.session_state.settings["birth_month"]
+    birth_day = st.session_state.settings["birth_day"]
+
+    horoscope_result = get_horoscope(birth_month, birth_day)
     st.markdown(
-        """
+        f"""
         <div class="info-card fortune-card">
-            <div style="font-size:13px;">✨ 今日の運勢（星座名）</div>
+            <div style="font-size:13px;">✨ 今日の運勢（{horoscope_result["sign"]}）</div>
             <div style="font-size:14px;margin-top:4px;">
-                星占いのメッセージをここに表示します。
+                {horoscope_result["sign"]}：{horoscope_result["rank"]}位
+            </div>
+            <div style="font-size:14px;margin-top:4px;">
+                {horoscope_result["sign"]}のあなた。{horoscope_result["content"]}
             </div>
             <div style="font-size:13px;margin-top:4px;">
-                総合運：★★★★★　ラッキーカラー：青
+                <ul>
+                    <li>ラッキーカラー：{horoscope_result["color"]}</li>
+                    <li>ラッキーアイテム：{horoscope_result["item"]}</li>
+                </ul>
+            </div>
+            <div style="font-size:13px;margin-top:4px;">
+                <ul>
+                    <li>仕事：{horoscope_result["job"]}</li>
+                    <li>お金：{horoscope_result["money"]}</li>
+                    <li>恋愛：{horoscope_result["love"]}</li>
+                    <li>総合：{horoscope_result["total"]}</li>
+                </ul>
             </div>
         </div>
         """,
