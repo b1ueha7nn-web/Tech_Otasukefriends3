@@ -6,6 +6,46 @@ from dotenv import load_dotenv
 from news_api import news_get
 from hour_calc import diff_hour
 from horoscope import get_horoscope
+from supabase import create_client, Client
+from dotenv import load_dotenv
+
+#categoriesを文字列にするためにjason必要
+import json
+
+#.envを読み込ませる
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def save_settings_to_supabase():
+    """st.session_state.settings の内容を users テーブルに 1 行保存する"""
+
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        st.error("SUPABASE_URL または SUPABASE_KEY が設定されていません。")
+        return None
+
+    s = st.session_state.settings
+
+    # list → JSON文字列に変換（["テクノロジー", "経済"] など）
+    categories_json = json.dumps(s.get("categories", []), ensure_ascii=False)
+
+    data = {
+        "birth_year":  s.get("birth_year"),
+        "birth_month": s.get("birth_month"),
+        "birth_day":   s.get("birth_day"),
+        "home_pref":   s.get("home_pref"),
+        "work_pref":   s.get("work_pref"),
+        "categories":  categories_json,
+    }
+
+    # Supabase に insert
+    res = supabase.table("users").insert(data).execute()
+    return res
+
+
 
 # ======================================
 # ページの基本設定
@@ -53,6 +93,7 @@ if "page" not in st.session_state:
 
 if "step" not in st.session_state:
     st.session_state.step = 1
+
 
 if "settings" not in st.session_state:
     st.session_state.settings = {
@@ -210,6 +251,26 @@ def render_dashboard():
 
     st.markdown('<div style="margin-top:12px;"></div>', unsafe_allow_html=True)
 
+    # 追加
+    # 開発中は True、本番テストは False にする（API100回制限ありのため）
+    USE_TEST_DATA = True
+    if USE_TEST_DATA:
+        # ----------------------------
+        # test_news.txt を読み込む
+        # ----------------------------
+        with open("test_news.txt", "r", encoding="utf-8") as f:
+            news_data = f.read()
+            st.info("📝 開発モード：test_news.txt を使っています（API未使用）")
+    else:
+        # ----------------------------
+        # 本番 API を呼び出す
+        # ----------------------------
+        news_data = call_news_api(NEWS_API_KEY)
+        st.success("本番モード：APIを使用しています")
+
+    # 読み込んだニュースを表示する処理（あなたの UI に合わせて）
+    st.write(news_data)
+
     # 天気
     home_pref = st.session_state.settings.get("home_pref") or "東京" #選択された地域
     telop, max_temp, min_temp = weather_api(home_pref)
@@ -265,7 +326,7 @@ def render_dashboard():
 
     st.markdown("#### 🔸 あなたへのおすすめニュース")
 
-    select_categories = st.session_state.settings["categories"]
+    select_categories = st.session_state.settings.get("categories", [])
     articles = news_get(NEWS_API_KEY, select_categories)
 
     # ニュースカード（ダミーを2件ほど）
@@ -344,9 +405,16 @@ def main():
                         st.rerun()
             else:
                 if st.button("完了"):
-                    # ここでダッシュボードに遷移
-                    st.session_state.page = "dashboard"
-                    st.rerun()
+                    # Supabase に保存
+                    try:
+                        res = save_settings_to_supabase()
+                        if res is not None:
+                            st.success("設定を保存しました！")
+                        # 保存に成功しても失敗しても、とりあえずダッシュボードへ
+                        st.session_state.page = "dashboard"
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"設定の保存中にエラーが発生しました: {e}")   
 
     # -----------------------
     # ダッシュボード画面
