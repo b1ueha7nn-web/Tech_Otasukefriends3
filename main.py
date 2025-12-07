@@ -1,50 +1,43 @@
 import streamlit as st
 from datetime import date, datetime
 from weather import weather_api, get_weather_icon
-import os
-from dotenv import load_dotenv
 from news_api import news_get
 from hour_calc import diff_hour
 from horoscope import get_horoscope
-from supabase import create_client, Client
+from db import supabase
+import os
 from dotenv import load_dotenv
-
-#categoriesを文字列にするためにjason必要
-import json
-
-#.envを読み込ませる
 load_dotenv()
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
+#========================================
+# Supabase に設定を保存する関数
+#========================================
 def save_settings_to_supabase():
-    """st.session_state.settings の内容を users テーブルに 1 行保存する"""
-
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        st.error("SUPABASE_URL または SUPABASE_KEY が設定されていません。")
+        """st.session_state.settings の内容を users テーブルに 1 行保存する"""
+        
+        auth_user_id = st.session_state.get("auth_user_id")
+        if not auth_user_id:
+            st.error("ログインユーザーが取得できません。先にログインしてください。")
         return None
 
-    s = st.session_state.settings
+        s = st.session_state.settings
 
-    # list → JSON文字列に変換（["テクノロジー", "経済"] など）
-    categories_json = json.dumps(s.get("categories", []), ensure_ascii=False)
+        # list → JSON文字列に変換（["テクノロジー", "経済"] など）
+        categories_json = json.dumps(s.get("categories", []), ensure_ascii=False)
 
-    data = {
-        "birth_year":  s.get("birth_year"),
-        "birth_month": s.get("birth_month"),
-        "birth_day":   s.get("birth_day"),
-        "home_pref":   s.get("home_pref"),
-        "work_pref":   s.get("work_pref"),
-        "categories":  categories_json,
-    }
+        data = {
+            "birth_year":  s.get("birth_year"),
+            "birth_month": s.get("birth_month"),
+            "birth_day":   s.get("birth_day"),
+            "home_pref":   s.get("home_pref"),
+            "work_pref":   s.get("work_pref"),
+            "categories":  categories_json,
+            }
 
-    # Supabase に insert
-    res = supabase.table("users").insert(data).execute()
-    return res
-
+        # Supabase に insert
+        res = supabase.table("users").insert(data).execute()
+        return res
 
 
 # ======================================
@@ -88,22 +81,7 @@ st.markdown("""
 # ======================================
 # セッションの初期化
 # ======================================
-if "page" not in st.session_state:
-    st.session_state.page = "onboarding"  # onboarding or dashboard
 
-if "step" not in st.session_state:
-    st.session_state.step = 1
-
-
-if "settings" not in st.session_state:
-    st.session_state.settings = {
-        "birth_year": None,
-        "birth_month": None,
-        "birth_day": None,
-        "home_pref": None,
-        "work_pref": None,
-        "categories": [],
-    }
 
 # 都道府県リスト
 PREF_LIST = [
@@ -272,7 +250,9 @@ def render_dashboard():
     st.write(news_data)
 
     # 天気
-    home_pref = st.session_state.settings.get("home_pref") or "東京" #選択された地域
+    home_pref = st.session_state.settings.get("home_pref") or "東京"
+    # st.write("DEBUG - home_pref:", home_pref)
+
     telop, max_temp, min_temp = weather_api(home_pref)
     icon = get_weather_icon(telop)
 
@@ -363,72 +343,155 @@ def render_dashboard():
 # ======================================
 # メイン処理
 # ======================================
-
 TOTAL_STEPS = 4
 
-def main():
-    page = st.session_state.page
+def onboarding_screen():
+    st.title("OTASUKE")
+
     step = st.session_state.step
 
-    # -----------------------
-    # 設定画面
-    # -----------------------
-    if page == "onboarding":
-        render_header()
-        render_progress(step, total=TOTAL_STEPS)
+    # ステップごとの表示
+    if step == 1:
+        step_birthdate()
+    elif step == 2:
+        step_home_region()
+    elif step == 3:
+        step_work_region()
+    elif step == 4:
+        step_categories()
 
-        # ステップごとの表示
-        if step == 1:
-            step_birthdate()
-        elif step == 2:
-            step_home_region()
-        elif step == 3:
-            step_work_region()
-        elif step == 4:
-            step_categories()
+    # ナビゲーションボタン
+    col_back, col_next = st.columns(2)
 
-        # ナビゲーションボタン
-        col_back, col_next = st.columns(2)
+    with col_back:
+        if st.button("＜ 戻る", disabled=step == 1):
+            if step > 1:
+                st.session_state.step -= 1
+                st.rerun()
 
-        with col_back:
-            if st.button("＜ 戻る", disabled=step == 1):
-                if step > 1:
-                    st.session_state.step -= 1
+    with col_next:
+        # 最後のステップだけ「完了」ボタンにする
+        if step < TOTAL_STEPS:
+            if st.button("次へ ＞"):
+                if step < TOTAL_STEPS:
+                    st.session_state.step += 1
                     st.rerun()
+        else:
+            if st.button("完了"):
+                 # デバッグ用に今の状態を表示（動作確認したら消してOK）
+                st.write("DEBUG: 完了ボタンが押されました")
+                st.write("DEBUG: 保存前 page =", st.session_state.page)
 
-        with col_next:
-            # 最後のステップだけ「完了」ボタンにする
-            if step < TOTAL_STEPS:
-                if st.button("次へ ＞"):
-                    if step < TOTAL_STEPS:
-                        st.session_state.step += 1
-                        st.rerun()
-            else:
-                if st.button("完了"):
-                    # Supabase に保存
-                    try:
-                        res = save_settings_to_supabase()
-                        if res is not None:
-                            st.success("設定を保存しました！")
-                        # 保存に成功しても失敗しても、とりあえずダッシュボードへ
+                # Supabase に保存
+                try:
+                    res = save_settings_to_supabase()
+                    if res is not None:
+                        st.success("設定を保存しました！")
+                    # 保存に成功しても失敗しても、とりあえずダッシュボードへ
                         st.session_state.page = "dashboard"
                         st.rerun()
-                    except Exception as e:
-                        st.error(f"設定の保存中にエラーが発生しました: {e}")   
+                except Exception as e:
+                    st.error(f"設定の保存中にエラーが発生しました: {e}")
+                    
+                # 保存の成否にかかわらずダッシュボードへ
+                st.session_state.page = "dashboard"
+                st.write("DEBUG: 保存後 page =", st.session_state.page)
+                st.rerun()
+    
+#=====================================
+#認証用の関数
+#======================================
+def sign_up(email,password):
+    try:
+        user = supabase.auth.sign_up({"email": email, "password": password})
+        if user and user.user:
+            # ← ここでユーザーIDをセッションに保存
+            st.session_state["auth_user_id"] = user.user.id
+        return user
+    except Exception as e:
+        st.error(f"サインアップ中にエラーが発生しました: {e}")
+        return None
+    
+def sign_out():
+    try:
+        supabase.auth.sign_out()
+    except Exception as e:
+        st.error(f"サインアウト中にエラーが発生しました: {e}")
+    
+def main_app(user_email):
+    st.title(f"ようこそ、{user_email}さん！")
+    st.success(f"ログインに成功しました。")
+    if st.button("ログアウト"):
+        sign-out()
+        st.session_state.user_email = None
+        st.session_state.page = "auth"
+        st.rerun()
+    
+#======================================
+#  認証画面
+#======================================
+def auth_screen():
+    st.title("OTASUKEへようこそ！")
+    option = st.selectbox("選択してください", ["ログイン", "サインアップ"])
+    email = st.text_input("メールアドレス")
+    password = st.text_input("パスワード", type="password")
 
-    # -----------------------
-    # ダッシュボード画面
-    # -----------------------
-    elif page == "dashboard":
-        render_dashboard()
-
-        # 必要なら「設定をやり直す」ボタンも追加
-        if st.button("設定を変更する"):
+    #======================================    
+    #ログイン処理
+    #======================================
+    if option == "ログイン" and st.button("ログイン"):
+        user = sign_in(email,password)
+        if user and user.user:
+            st.session_state.user_email = user.user.email
+            st.success("ログインに成功しました！")
+            #Dashboardへ遷移
+            st.session_state.page = "dashboard"
+            st.rerun()
+    
+    #======================================
+    #サインアップ処理
+    #======================================
+    if option == "サインアップ" and st.button("サインアップ"):
+        user = sign_up(email,password)
+        if user and user.user:
+            st.success("サインアップに成功しました！")
+            #オンボーディングへ遷移
             st.session_state.page = "onboarding"
-            st.session_state.step = 1
             st.rerun()
 
+# ======================================
+# メイン処理
+# ======================================
+def main():
+    # セッション初期化（ここはシンプルでOK）
+    if "user_email" not in st.session_state:
+        st.session_state.user_email = None  # ログインしているかどうか
+    if "page" not in st.session_state:
+        st.session_state.page = "auth"      # 最初は認証画面
+    if "step" not in st.session_state:
+        st.session_state.step = 1
+    if "settings" not in st.session_state:
+        st.session_state.settings = {
+            "birth_year": None,
+            "birth_month": None,
+            "birth_day": None,
+            "home_pref": None,
+            "work_pref": None,
+            "categories": [],
+        }
 
+
+    # 画面遷移
+    if st.session_state.page == "auth":
+        auth_screen()
+    elif st.session_state.page == "onboarding":
+        onboarding_screen()
+    elif st.session_state.page == "dashboard":
+        render_dashboard()
+
+# ======================================
+# 実行
+# ======================================     
 if __name__ == "__main__":
     main()
 
