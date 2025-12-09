@@ -8,36 +8,71 @@ from db import supabase
 import os
 from dotenv import load_dotenv
 load_dotenv()
+import json
 
 
 #========================================
 # Supabase に設定を保存する関数
 #========================================
 def save_settings_to_supabase():
-        """st.session_state.settings の内容を users テーブルに 1 行保存する"""
-        
-        auth_user_id = st.session_state.get("auth_user_id")
-        if not auth_user_id:
-            st.error("ログインユーザーが取得できません。先にログインしてください。")
+    """st.session_state.settings の内容を users テーブルに 1 行保存する"""
+
+    auth_user_id = st.session_state.get("auth_user_id")
+    if not auth_user_id:
+        st.error("ログインユーザーが取得できません。先にログインしてください。")
         return None
 
-        s = st.session_state.settings
+    s = st.session_state.settings
+    categories_json = json.dumps(s.get("categories", []), ensure_ascii=False)
 
-        # list → JSON文字列に変換（["テクノロジー", "経済"] など）
-        categories_json = json.dumps(s.get("categories", []), ensure_ascii=False)
+    data = {
+        "auth_user_id": auth_user_id,
+        "birth_year":   s.get("birth_year"),
+        "birth_month":  s.get("birth_month"),
+        "birth_day":    s.get("birth_day"),
+        "home_pref":    s.get("home_pref"),
+        "work_pref":    s.get("work_pref"),
+        "categories":   categories_json,
+    }
 
-        data = {
-            "birth_year":  s.get("birth_year"),
-            "birth_month": s.get("birth_month"),
-            "birth_day":   s.get("birth_day"),
-            "home_pref":   s.get("home_pref"),
-            "work_pref":   s.get("work_pref"),
-            "categories":  categories_json,
-            }
+    res = (
+        supabase
+        .table("users")
+        .upsert(data, on_conflict="auth_user_id")
+        .execute()
+    )
 
-        # Supabase に insert
-        res = supabase.table("users").insert(data).execute()
-        return res
+    return res
+
+
+
+def load_settings_from_supabase():
+    #Supabase の users テーブルから、このユーザーの設定を読み込む"""
+
+    auth_user_id = st.session_state.get("auth_user_id")
+    if not auth_user_id:
+        return  # ログインしていなければ何もしない
+
+    res = (
+        supabase
+        .table("users")
+        .select("*")
+        .eq("auth_user_id", auth_user_id)
+        .maybe_single()      # 0 or 1 件想定
+        .execute()
+    )
+
+    if res.data:
+        row = res.data
+        st.session_state.settings = {
+            "birth_year":  row.get("birth_year"),
+            "birth_month": row.get("birth_month"),
+            "birth_day":   row.get("birth_day"),
+            "home_pref":   row.get("home_pref"),
+            "work_pref":   row.get("work_pref"),
+            "categories":  json.loads(row.get("categories") or "[]"),
+        }
+
 
 
 # ======================================
@@ -218,8 +253,15 @@ def step_categories():
 # ダッシュボード（メイン画面）
 # ======================================
 def render_dashboard():
+    cols = st.columns([6, 1])
+    with cols[1]:
+        # 右上に小さな「設定」ボタン
+        if st.button("⚙️ 設定", key="header_settings"):
+            st.session_state.page = "onboarding"
+            st.session_state.step = 1  # 生年月日からやり直し（好みで変更OK）
+            st.rerun()
+
     render_header()
-    load_dotenv()
     NEWS_API_KEY = os.getenv("NEWS_API_KEY")
     today = datetime.today()
     
@@ -339,6 +381,12 @@ def render_dashboard():
             url=articles[i]["url"],           # リンク先のURL
             help="クリックすると記事の詳細ページに移動します" # ツールチップとして表示されるテキスト
         )
+    # ======================================
+    # 設定に戻るボタン
+    # ======================================
+
+
+
 
 # ======================================
 # メイン処理
@@ -378,7 +426,7 @@ def onboarding_screen():
                     st.rerun()
         else:
             if st.button("完了"):
-                 # デバッグ用に今の状態を表示（動作確認したら消してOK）
+                # デバッグ用に今の状態を表示（動作確認したら消してOK）
                 st.write("DEBUG: 完了ボタンが押されました")
                 st.write("DEBUG: 保存前 page =", st.session_state.page)
 
@@ -395,21 +443,36 @@ def onboarding_screen():
                     
                 # 保存の成否にかかわらずダッシュボードへ
                 st.session_state.page = "dashboard"
-                st.write("DEBUG: 保存後 page =", st.session_state.page)
                 st.rerun()
     
 #=====================================
 #認証用の関数
 #======================================
-def sign_up(email,password):
+def sign_up(email, password):
     try:
         user = supabase.auth.sign_up({"email": email, "password": password})
         if user and user.user:
-            # ← ここでユーザーIDをセッションに保存
+            # Supabase Auth のユーザーIDをセッションに保存
             st.session_state["auth_user_id"] = user.user.id
         return user
     except Exception as e:
         st.error(f"サインアップ中にエラーが発生しました: {e}")
+        return None
+
+def sign_in(email, password):
+    #既存ユーザーでログインし、auth_user_id をセッションに保存する
+    try:
+        user = supabase.auth.sign_in_with_password({
+            "email": email,
+            "password": password,
+        })
+        if user and user.user:
+            # ★ Supabaseの user.id をセッションに保持
+            st.session_state["auth_user_id"] = user.user.id
+        return user
+
+    except Exception as e:
+        st.error(f"ログイン中にエラーが発生しました: {e}")
         return None
     
 def sign_out():
@@ -422,7 +485,7 @@ def main_app(user_email):
     st.title(f"ようこそ、{user_email}さん！")
     st.success(f"ログインに成功しました。")
     if st.button("ログアウト"):
-        sign-out()
+        sign_out()
         st.session_state.user_email = None
         st.session_state.page = "auth"
         st.rerun()
@@ -432,9 +495,34 @@ def main_app(user_email):
 #======================================
 def auth_screen():
     st.title("OTASUKEへようこそ！")
-    option = st.selectbox("選択してください", ["ログイン", "サインアップ"])
+
+    # ログイン or サインアップ 選択
+    option = st.selectbox(
+        "選択してください",
+        ["ログイン", "サインアップ"],
+        help="初めて利用する場合は『サインアップ』を選択してください"
+    )
+
+    # 選択内容に応じた説明
+    if option == "サインアップ":
+        st.caption("初めてOTASUKEを使う方は、こちらでアカウントを作成します。")
+    else:
+        st.caption("すでに登録済みの方は『ログイン』を選んでください。")
+
+    # メールアドレス
     email = st.text_input("メールアドレス")
+
+    # パスワード
     password = st.text_input("パスワード", type="password")
+    st.caption("※ 半角英数字8文字以上を推奨します。英字・数字を組み合わせたパスワードにしてください。")
+
+  # パスワードリセットボタンは option がログインのときだけ表示
+    if option == "ログイン":
+        if st.button("パスワードを忘れた場合はこちら"):
+            if not email:
+                st.warning("先にメールアドレスを入力してください。")
+            else:
+                send_reset_email(email)
 
     #======================================    
     #ログイン処理
@@ -443,6 +531,7 @@ def auth_screen():
         user = sign_in(email,password)
         if user and user.user:
             st.session_state.user_email = user.user.email
+            load_settings_from_supabase()
             st.success("ログインに成功しました！")
             #Dashboardへ遷移
             st.session_state.page = "dashboard"
@@ -458,6 +547,23 @@ def auth_screen():
             #オンボーディングへ遷移
             st.session_state.page = "onboarding"
             st.rerun()
+
+#======================================
+#パスワードリセットメール送信
+#======================================
+def send_reset_email(email: str):
+    """Supabase の機能でパスワードリセットメールを送る"""
+    try:
+        supabase.auth.reset_password_email(
+            email,
+            options={
+                # 本番デプロイしたときの URL に合わせて変更
+                "redirect_to": "http://localhost:8501"
+            },
+        )
+        st.success("パスワード再設定用のメールを送信しました。メールを確認してください。")
+    except Exception as e:
+        st.error(f"パスワードリセットメール送信中にエラーが発生しました: {e}")
 
 # ======================================
 # メイン処理
