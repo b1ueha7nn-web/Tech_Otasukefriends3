@@ -26,8 +26,8 @@ def news_get(api_key, categories):
         "language": "jp",  #言語
         "from": from_time,       # 開始日時
         "to": to_time,         # 終了日時
-        "sortBy": "popularity",               # ソート順
-        "pageSize": 5,                       # 取得件数
+        "sortBy": "relevancy",               # ソート順
+        "pageSize": 10,                       # 取得件数
         "apiKey": api_key
     }
 

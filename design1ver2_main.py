@@ -1,81 +1,59 @@
 import streamlit as st
 from datetime import date, datetime
 from weather import weather_api, get_weather_icon
+import os
+from dotenv import load_dotenv
 from news_api import news_get
 from hour_calc import diff_hour
 from horoscope import get_horoscope
-from db import supabase
-import os
+from supabase import create_client, Client
 from dotenv import load_dotenv
-load_dotenv()
+
+#categoriesを文字列にするためにjason必要
 import json
-from weather_api import (
-    geocode_prefecture, fetch_current_weather, 
-    fetch_forecast, aggregate_daily_forecast, get_weather_icon, JST
-)
 
+#.envを読み込ませる
+load_dotenv()
 
-#========================================
-# Supabase に設定を保存する関数
-#========================================
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# Supabaseクライアントの初期化（キーがない場合はNone）
+supabase = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        print(f"Supabase接続エラー: {e}")
+
 def save_settings_to_supabase():
     """st.session_state.settings の内容を users テーブルに 1 行保存する"""
 
-    auth_user_id = st.session_state.get("auth_user_id")
-    if not auth_user_id:
-        st.error("ログインユーザーが取得できません。先にログインしてください。")
+    if not supabase:
+        # Supabaseが利用できない場合はスキップ（デモモード）
         return None
 
     s = st.session_state.settings
+
+    # list → JSON文字列に変換（["テクノロジー", "経済"] など）
     categories_json = json.dumps(s.get("categories", []), ensure_ascii=False)
 
     data = {
-        "auth_user_id": auth_user_id,
-        "birth_year":   s.get("birth_year"),
-        "birth_month":  s.get("birth_month"),
-        "birth_day":    s.get("birth_day"),
-        "home_pref":    s.get("home_pref"),
-        "work_pref":    s.get("work_pref"),
-        "categories":   categories_json,
+        "birth_year":  s.get("birth_year"),
+        "birth_month": s.get("birth_month"),
+        "birth_day":   s.get("birth_day"),
+        "home_pref":   s.get("home_pref"),
+        "work_pref":   s.get("work_pref"),
+        "categories":  categories_json,
     }
 
-    res = (
-        supabase
-        .table("users")
-        .upsert(data, on_conflict="auth_user_id")
-        .execute()
-    )
-
-    return res
-
-
-
-def load_settings_from_supabase():
-    #Supabase の users テーブルから、このユーザーの設定を読み込む"""
-
-    auth_user_id = st.session_state.get("auth_user_id")
-    if not auth_user_id:
-        return  # ログインしていなければ何もしない
-
-    res = (
-        supabase
-        .table("users")
-        .select("*")
-        .eq("auth_user_id", auth_user_id)
-        .maybe_single()      # 0 or 1 件想定
-        .execute()
-    )
-
-    if res.data:
-        row = res.data
-        st.session_state.settings = {
-            "birth_year":  row.get("birth_year"),
-            "birth_month": row.get("birth_month"),
-            "birth_day":   row.get("birth_day"),
-            "home_pref":   row.get("home_pref"),
-            "work_pref":   row.get("work_pref"),
-            "categories":  json.loads(row.get("categories") or "[]"),
-        }
+    try:
+        # Supabase に insert
+        res = supabase.table("users").insert(data).execute()
+        return res
+    except Exception as e:
+        st.warning(f"データ保存をスキップしました: {e}")
+        return None
 
 
 
@@ -89,7 +67,7 @@ st.set_page_config(
 )
 
 #======================================
-#CSS
+#CSS(UIデザイン - 春の花畑スタイル)
 #======================================
 st.markdown("""
 <style>
@@ -319,7 +297,22 @@ h1, h2, h3, h4 {
 # ======================================
 # セッションの初期化
 # ======================================
+if "page" not in st.session_state:
+    st.session_state.page = "onboarding"  # onboarding or dashboard
 
+if "step" not in st.session_state:
+    st.session_state.step = 1
+
+
+if "settings" not in st.session_state:
+    st.session_state.settings = {
+        "birth_year": None,
+        "birth_month": None,
+        "birth_day": None,
+        "home_pref": None,
+        "work_pref": None,
+        "categories": [],
+    }
 
 # 都道府県リスト
 PREF_LIST = [
@@ -448,15 +441,8 @@ def step_categories():
 # ダッシュボード（メイン画面）
 # ======================================
 def render_dashboard():
-    cols = st.columns([6, 1])
-    with cols[1]:
-        # 右上に小さな「設定」ボタン
-        if st.button("⚙️ 設定", key="header_settings"):
-            st.session_state.page = "onboarding"
-            st.session_state.step = 1  # 生年月日からやり直し（好みで変更OK）
-            st.rerun()
-
     render_header()
+    load_dotenv()
     NEWS_API_KEY = os.getenv("NEWS_API_KEY")
     today = datetime.today()
     
@@ -466,44 +452,22 @@ def render_dashboard():
 
     st.markdown('<div style="margin-top:12px;"></div>', unsafe_allow_html=True)
 
-    # # 追加
-    # # 開発中は True、本番テストは False にする（API100回制限ありのため）
-    # USE_TEST_DATA = True
-    # if USE_TEST_DATA:
-    #     # ----------------------------
-    #     # test_news.txt を読み込む
-    #     # ----------------------------
-    #     with open("test_news.txt", "r", encoding="utf-8") as f:
-    #         news_data = f.read()
-    #         st.info("📝 開発モード：test_news.txt を使っています（API未使用）")
-    # else:
-    #     # ----------------------------
-    #     # 本番 API を呼び出す
-    #     # ----------------------------
-    #     news_data = call_news_api(NEWS_API_KEY)
-    #     st.success("本番モード：APIを使用しています")
+    # デモモードの表示
+    st.markdown('<div style="font-size:11px; color:#9ca3af; text-align:center; margin-bottom:12px;">🎨 デモモード（サンプルデータ表示中）</div>', unsafe_allow_html=True)
 
-    # # 読み込んだニュースを表示する処理（あなたの UI に合わせて）
-    # st.write(news_data)
-
-    # 天気
-    OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+    # 天気（ダミーデータ）
     home_pref = st.session_state.settings.get("home_pref") or "東京"
-    # st.write("DEBUG - home_pref:", home_pref)
-    lat, lon, resolved_name = geocode_prefecture(home_pref, OPENWEATHER_API_KEY)
-    current_weather = fetch_current_weather(lat, lon, OPENWEATHER_API_KEY)
-    forecast_data = fetch_forecast(lat, lon, OPENWEATHER_API_KEY)    
-    daily_forecast = aggregate_daily_forecast(forecast_data)
-    day_data = daily_forecast[0]
-    weather_desc = day_data.get("weather", [{}])[0].get("description", "不明")
-    weather_desc = weather_desc.replace("晴天", "晴れ")
-    icon = get_weather_icon(weather_desc) # アイコン取得もモジュール化
-
-    temp_max = day_data.get("temp", {}).get("max", "--")
-    temp_min = day_data.get("temp", {}).get("min", "--")
-    pop = day_data.get("pop", None)*100
-    # telop, max_temp, min_temp = weather_api(home_pref)
-    # icon = get_weather_icon(telop)
+    
+    # APIキーがあれば本物のデータを取得、なければダミー
+    try:
+        if os.getenv("OPENWEATHER_API_KEY"):
+            telop, max_temp, min_temp = weather_api(home_pref)
+        else:
+            telop, max_temp, min_temp = "晴れ", 22, 15
+    except:
+        telop, max_temp, min_temp = "晴れ", 22, 15
+    
+    icon = get_weather_icon(telop)
 
     st.markdown(
         f"""
@@ -513,9 +477,9 @@ def render_dashboard():
                 <div style="font-size:72px; line-height:1;">{icon}</div>
                 <div>
                     <div style="font-size:16px; color:#666; margin-bottom:4px;">【{home_pref}】</div>
-                    <div style="font-size:48px; font-weight:700; color:#FF6347; line-height:1;"> {temp_max}°</div>
-                    <div style="font-size:16px; color:#888; margin-top:4px;">最低気温 {temp_min}°</div>
-                    <div style="font-size:15px; color:#666; margin-top:4px;">降水確率 {pop}%</div>
+                    <div style="font-size:48px; font-weight:700; color:#FF6347; line-height:1;">{max_temp}°</div>
+                    <div style="font-size:16px; color:#888; margin-top:4px;">最低気温 {min_temp}°</div>
+                    <div style="font-size:15px; color:#666; margin-top:8px;">{telop}</div>
                 </div>
             </div>
         </div>
@@ -524,10 +488,24 @@ def render_dashboard():
     )
 
     # 星占い （記載は一例、APIで取得できる情報を記載する）
-    birth_month = st.session_state.settings["birth_month"]
-    birth_day = st.session_state.settings["birth_day"]
+    birth_month = st.session_state.settings.get("birth_month") or 1
+    birth_day = st.session_state.settings.get("birth_day") or 1
 
-    horoscope_result = get_horoscope(birth_month, birth_day)
+    try:
+        horoscope_result = get_horoscope(birth_month, birth_day)
+    except:
+        # ダミーデータ
+        horoscope_result = {
+            "sign": "おひつじ座",
+            "rank": 1,
+            "content": "今日は素敵な一日になりそうです！新しいチャレンジを楽しんでください。",
+            "color": "ピンク",
+            "item": "ハンカチ",
+            "job": "★★★★☆",
+            "money": "★★★☆☆",
+            "love": "★★★★★",
+            "total": "★★★★☆"
+        }
     st.markdown(
         f"""
         <div class="info-card fortune-card">
@@ -556,17 +534,50 @@ def render_dashboard():
     st.markdown("#### 🔸 あなたへのおすすめニュース")
 
     select_categories = st.session_state.settings.get("categories", [])
-    articles = news_get(NEWS_API_KEY, select_categories)
-
-    # ニュースカード（ダミーを2件ほど）
+    
+    # ニュース取得（APIキーがなければダミーデータ）
+    try:
+        if NEWS_API_KEY:
+            articles = news_get(NEWS_API_KEY, select_categories)
+        else:
+            # ダミーニュース
+            articles = [
+                {
+                    "title": "新しいテクノロジーが日常生活を変える",
+                    "description": "最新のAI技術により、私たちの生活がより便利になっています。",
+                    "url": "https://example.com/news1",
+                    "urlToImage": "",
+                    "publishedAt": "2025-12-09T09:00:00Z"
+                },
+                {
+                    "title": "健康的なライフスタイルのための5つのヒント",
+                    "description": "毎日の小さな習慣が大きな変化をもたらします。",
+                    "url": "https://example.com/news2",
+                    "urlToImage": "",
+                    "publishedAt": "2025-12-09T08:00:00Z"
+                }
+            ]
+    except:
+        articles = [
+            {
+                "title": "サンプルニュース1",
+                "description": "これはデモ用のサンプルニュースです。",
+                "url": "https://example.com",
+                "urlToImage": "",
+                "publishedAt": "2025-12-09T09:00:00Z"
+            }
+        ]
     
     for i in range(len(articles)):
-        delta = diff_hour(articles[i]["publishedAt"])
-        
+        try:
+            delta = diff_hour(articles[i]["publishedAt"])
+        except:
+            delta = 2  # デフォルト値
+        img_url = articles[i].get("urlToImage", "")
         st.markdown(
             f"""
             <div class="news-card">
-                {f'<img src="{articles[i]["urlToImage"]}" alt="ニュース画像">' if articles[i]["urlToImage"] else ''}
+                {f'<img src="{img_url}" alt="ニュース画像">' if img_url else ''}
                 <div style="font-size:16px; font-weight:700; color:#333; margin-bottom:8px; line-height:1.4;">
                     {articles[i]["title"]}
                 </div>
@@ -585,226 +596,72 @@ def render_dashboard():
             url=articles[i]["url"],
             help="クリックすると記事の詳細ページに移動します"
         )
-    # ======================================
-    # 設定に戻るボタン
-    # ======================================
-
-
-
 
 # ======================================
 # メイン処理
 # ======================================
+
 TOTAL_STEPS = 4
 
-def onboarding_screen():
-    st.title("OTASUKE")
-
+def main():
+    page = st.session_state.page
     step = st.session_state.step
 
-    # ステップごとの表示
-    if step == 1:
-        step_birthdate()
-    elif step == 2:
-        step_home_region()
-    elif step == 3:
-        step_work_region()
-    elif step == 4:
-        step_categories()
+    # -----------------------
+    # 設定画面
+    # -----------------------
+    if page == "onboarding":
+        render_header()
+        render_progress(step, total=TOTAL_STEPS)
 
-    # ナビゲーションボタン
-    col_back, col_next = st.columns(2)
+        # ステップごとの表示
+        if step == 1:
+            step_birthdate()
+        elif step == 2:
+            step_home_region()
+        elif step == 3:
+            step_work_region()
+        elif step == 4:
+            step_categories()
 
-    with col_back:
-        if st.button("＜ 戻る", disabled=step == 1):
-            if step > 1:
-                st.session_state.step -= 1
-                st.rerun()
+        # ナビゲーションボタン
+        col_back, col_center, col_next = st.columns([1, 1, 1])
 
-    with col_next:
-        # 最後のステップだけ「完了」ボタンにする
-        if step < TOTAL_STEPS:
-            if st.button("次へ ＞"):
+        with col_back:
+            if st.button("＜ 戻る", disabled=step == 1, use_container_width=False):
+                if step > 1:
+                    st.session_state.step -= 1
+                    st.rerun()
+
+        with col_next:
+            if st.button("次へ ＞" if step < TOTAL_STEPS else "完了", use_container_width=False, key=f"next_btn_{step}"):
                 if step < TOTAL_STEPS:
                     st.session_state.step += 1
                     st.rerun()
-        else:
-            if st.button("完了"):
-                # デバッグ用に今の状態を表示（動作確認したら消してOK）
-                st.write("DEBUG: 完了ボタンが押されました")
-                st.write("DEBUG: 保存前 page =", st.session_state.page)
-
-                # Supabase に保存
-                try:
-                    res = save_settings_to_supabase()
-                    if res is not None:
-                        st.success("設定を保存しました！")
-                    # 保存に成功しても失敗しても、とりあえずダッシュボードへ
+                else:
+                    # Supabase に保存
+                    try:
+                        res = save_settings_to_supabase()
+                        if res is not None:
+                            st.success("設定を保存しました！")
+                        # 保存に成功しても失敗しても、とりあえずダッシュボードへ
                         st.session_state.page = "dashboard"
                         st.rerun()
-                except Exception as e:
-                    st.error(f"設定の保存中にエラーが発生しました: {e}")
-                    
-                # 保存の成否にかかわらずダッシュボードへ
-                st.session_state.page = "dashboard"
-                st.rerun()
-    
-#=====================================
-#認証用の関数
-#======================================
-def sign_up(email, password):
-    try:
-        user = supabase.auth.sign_up({"email": email, "password": password})
-        if user and user.user:
-            # Supabase Auth のユーザーIDをセッションに保存
-            st.session_state["auth_user_id"] = user.user.id
-        return user
-    except Exception as e:
-        st.error(f"サインアップ中にエラーが発生しました: {e}")
-        return None
+                    except Exception as e:
+                        st.error(f"設定の保存中にエラーが発生しました: {e}")
 
-def sign_in(email, password):
-    #既存ユーザーでログインし、auth_user_id をセッションに保存する
-    try:
-        user = supabase.auth.sign_in_with_password({
-            "email": email,
-            "password": password,
-        })
-        if user and user.user:
-            # ★ Supabaseの user.id をセッションに保持
-            st.session_state["auth_user_id"] = user.user.id
-        return user
-
-    except Exception as e:
-        st.error(f"ログイン中にエラーが発生しました: {e}")
-        return None
-    
-def sign_out():
-    try:
-        supabase.auth.sign_out()
-    except Exception as e:
-        st.error(f"サインアウト中にエラーが発生しました: {e}")
-    
-def main_app(user_email):
-    st.title(f"ようこそ、{user_email}さん！")
-    st.success(f"ログインに成功しました。")
-    if st.button("ログアウト"):
-        sign_out()
-        st.session_state.user_email = None
-        st.session_state.page = "auth"
-        st.rerun()
-    
-#======================================
-#  認証画面
-#======================================
-def auth_screen():
-    st.title("OTASUKEへようこそ！")
-
-    # ログイン or サインアップ 選択
-    option = st.selectbox(
-        "選択してください",
-        ["ログイン", "サインアップ"],
-        help="初めて利用する場合は『サインアップ』を選択してください"
-    )
-
-    # 選択内容に応じた説明
-    if option == "サインアップ":
-        st.caption("初めてOTASUKEを使う方は、こちらでアカウントを作成します。")
-    else:
-        st.caption("すでに登録済みの方は『ログイン』を選んでください。")
-
-    # メールアドレス
-    email = st.text_input("メールアドレス")
-
-    # パスワード
-    password = st.text_input("パスワード", type="password")
-    st.caption("※ 半角英数字8文字以上を推奨します。英字・数字を組み合わせたパスワードにしてください。")
-
-  # パスワードリセットボタンは option がログインのときだけ表示
-    if option == "ログイン":
-        if st.button("パスワードを忘れた場合はこちら"):
-            if not email:
-                st.warning("先にメールアドレスを入力してください。")
-            else:
-                send_reset_email(email)
-
-    #======================================    
-    #ログイン処理
-    #======================================
-    if option == "ログイン" and st.button("ログイン"):
-        user = sign_in(email,password)
-        if user and user.user:
-            st.session_state.user_email = user.user.email
-            load_settings_from_supabase()
-            st.success("ログインに成功しました！")
-            #Dashboardへ遷移
-            st.session_state.page = "dashboard"
-            st.rerun()
-    
-    #======================================
-    #サインアップ処理
-    #======================================
-    if option == "サインアップ" and st.button("サインアップ"):
-        user = sign_up(email,password)
-        if user and user.user:
-            st.success("サインアップに成功しました！")
-            #オンボーディングへ遷移
-            st.session_state.page = "onboarding"
-            st.rerun()
-        # st.session_state.page = "onboarding"
-        # st.rerun()
-
-#======================================
-#パスワードリセットメール送信
-#======================================
-def send_reset_email(email: str):
-    """Supabase の機能でパスワードリセットメールを送る"""
-    try:
-        supabase.auth.reset_password_email(
-            email,
-            options={
-                # 本番デプロイしたときの URL に合わせて変更
-                "redirect_to": "http://localhost:8501"
-            },
-        )
-        st.success("パスワード再設定用のメールを送信しました。メールを確認してください。")
-    except Exception as e:
-        st.error(f"パスワードリセットメール送信中にエラーが発生しました: {e}")
-
-# ======================================
-# メイン処理
-# ======================================
-def main():
-    # セッション初期化（ここはシンプルでOK）
-    if "user_email" not in st.session_state:
-        st.session_state.user_email = None  # ログインしているかどうか
-    if "page" not in st.session_state:
-        st.session_state.page = "auth"      # 最初は認証画面
-    if "step" not in st.session_state:
-        st.session_state.step = 1
-    if "settings" not in st.session_state:
-        st.session_state.settings = {
-            "birth_year": None,
-            "birth_month": None,
-            "birth_day": None,
-            "home_pref": None,
-            "work_pref": None,
-            "categories": [],
-        }
-
-
-    # 画面遷移
-    if st.session_state.page == "auth":
-        auth_screen()
-    elif st.session_state.page == "onboarding":
-        onboarding_screen()
-    elif st.session_state.page == "dashboard":
+    # -----------------------
+    # ダッシュボード画面
+    # -----------------------
+    elif page == "dashboard":
         render_dashboard()
 
-# ======================================
-# 実行
-# ======================================     
+        # 必要なら「設定をやり直す」ボタンも追加
+        if st.button("設定を変更する"):
+            st.session_state.page = "onboarding"
+            st.session_state.step = 1
+            st.rerun()
+
+
 if __name__ == "__main__":
     main()
-
-
