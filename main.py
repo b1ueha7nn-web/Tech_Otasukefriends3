@@ -56,7 +56,6 @@ def load_settings_from_supabase():
     auth_user_id = st.session_state.get("auth_user_id")
     if not auth_user_id:
         return  # ログインしていなければ何もしない
-
     res = (
         supabase
         .table("users")
@@ -398,7 +397,7 @@ def step_birthdate():
     st.session_state.settings["birth_year"] = year if year != "選択してください" else None
     st.session_state.settings["birth_month"] = month if month != "選択してください" else None
     st.session_state.settings["birth_day"] = day if day != "選択してください" else None
-
+    
 # ======================================
 # ステップ2：居住地域/勤務地
 # ======================================
@@ -408,7 +407,7 @@ def step_home_region():
 
     home = st.selectbox("都道府県", options=["選択してください"] + PREF_LIST)
     st.session_state.settings["home_pref"] = home if home != "選択してください" else None
-
+    
 # ======================================
 # (ステップ3)：勤務地
 # ======================================
@@ -442,6 +441,7 @@ def step_categories():
 
     # 必要であれば session_state に保存
     st.session_state.settings["categories"] = selection
+  
 
 
 # ======================================
@@ -591,6 +591,17 @@ def render_dashboard():
             url=articles[i]["url"],
             help="クリックすると記事の詳細ページに移動します"
         )
+    
+    supabase.table("users").insert({
+                "auth_user_id":st.session_state.settings["auth_user_id"],
+                "email":st.session_state.settings["email"],
+                "birth_year": st.session_state.settings["birth_year"], # 認証IDを外部キーとして保存
+                "birth_month": st.session_state.settings["birth_month"],
+                "birth_day":st.session_state.settings["birth_day"],
+                "home_pref":st.session_state.settings["home_pref"],
+                "categories":st.session_state.settings["categories"]
+                # その他、初期プロフィール情報など
+            }).execute()
     # ======================================
     # 設定に戻るボタン
     # ======================================
@@ -660,11 +671,19 @@ def onboarding_screen():
 #======================================
 def sign_up(email, password):
     try:
-        user = supabase.auth.sign_up({"email": email, "password": password})
-        if user and user.user:
-            # Supabase Auth のユーザーIDをセッションに保存
-            st.session_state["auth_user_id"] = user.user.id
-        return user
+        # 1. Supabase Auth (認証テーブル auth.users) にユーザーを作成
+        auth_response = supabase.auth.sign_up({"email": email, "password": password})
+        
+        if auth_response and auth_response.user:
+            auth_user_id = auth_response.user.id
+            
+            st.session_state.settings["auth_user_id"] = auth_user_id
+            st.session_state.settings["email"] = email
+
+            return auth_response
+            
+        return None # 認証レスポンスが不完全な場合
+        
     except Exception as e:
         st.error(f"サインアップ中にエラーが発生しました: {e}")
         return None
