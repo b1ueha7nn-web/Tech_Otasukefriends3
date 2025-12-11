@@ -755,16 +755,53 @@ def auth_screen():
         # st.rerun()
 
 #======================================
+# パスワード再設定画面　★追加
+#======================================
+def reset_password_screen():
+    st.title("パスワードの再設定")
+
+    st.write("メールに届いたリンクからこの画面を開いているはずです。")
+    st.write("新しいパスワードを入力してください。")
+
+    new_password = st.text_input("新しいパスワード", type="password")
+    new_password_confirm = st.text_input("新しいパスワード（確認用）", type="password")
+
+    if st.button("パスワードを変更する"):
+        if not new_password or not new_password_confirm:
+            st.warning("両方の入力欄にパスワードを入力してください。")
+            return
+        
+        if new_password != new_password_confirm:
+            st.error("新しいパスワードと確認用パスワードが一致しません。")
+            return
+        
+        if len(new_password) < 8:
+            st.warning("8文字以上のパスワードをおすすめします。")
+
+        try:
+            # Supabase に新しいパスワードを反映
+            res = supabase.auth.update_user({"password": new_password})
+            st.success("パスワードを変更しました。ログイン画面に戻ります。")
+
+            # ログイン画面へ戻す
+            st.session_state.page = "auth"
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"パスワード変更中にエラーが発生しました: {e}")
+
+
+#======================================
 #パスワードリセットメール送信
 #======================================
 def send_reset_email(email: str):
     """Supabase の機能でパスワードリセットメールを送る"""
     try:
-        supabase.auth.reset_password_email(
+        supabase.auth.reset_password_for_email(
             email,
-            options={
-                # 本番デプロイしたときの URL に合わせて変更
-                "redirect_to": "http://localhost:8501"
+            {
+                # ★本番の Streamlit の URL に合わせて変更する
+                "redirect_to": "https://techotasukefriends-w3fhwuydwqhsbi9spgcrfx.streamlit.app/?mode=reset"
             },
         )
         st.success("パスワード再設定用のメールを送信しました。メールを確認してください。")
@@ -793,6 +830,28 @@ def main():
         }
 
 
+    # ★ URL のクエリから mode を取得する
+    try:
+        # 新しい Streamlit の場合
+        params = st.query_params
+    except AttributeError:
+        # 少し古いバージョンの場合
+        params = st.experimental_get_query_params()
+
+    mode = ""
+    if params is not None:
+        value = params.get("mode")  # dict でも QueryParams でも get は使える想定
+        if isinstance(value, list):
+            # experimental_get_query_params() の場合は ['reset'] みたいなリスト
+            mode = value[0] if value else ""
+        elif isinstance(value, str):
+            # query_params の場合は 'reset'
+            mode = value
+
+    # ★ mode=reset のときはパスワード再設定ページへ
+    if mode == "reset":
+        st.session_state.page = "reset_password"
+
     # 画面遷移
     if st.session_state.page == "auth":
         auth_screen()
@@ -800,6 +859,8 @@ def main():
         onboarding_screen()
     elif st.session_state.page == "dashboard":
         render_dashboard()
+    elif st.session_state.page == "reset_password":
+        reset_password_screen()
 
 # ======================================
 # 実行
