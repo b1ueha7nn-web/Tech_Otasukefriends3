@@ -9,7 +9,7 @@ def news_get(api_key, categories):
     BASE_URL = "https://newsapi.org/v2/everything"  # NewsAPIのエンドポイント
 
     now = datetime.now()
-    two_days_ago = now - timedelta(days=2)
+    two_days_ago = now - timedelta(days=3)
     from_time = two_days_ago.strftime("%Y-%m-%dT%H:%M:%S")
     to_time = now.strftime("%Y-%m-%dT%H:%M:%S")
 
@@ -19,7 +19,15 @@ def news_get(api_key, categories):
             key_word = key_word + category
         else:
             key_word = key_word + category + " OR "
-                
+   
+    trusted_domains = [
+        "nhk.or.jp", "asahi.com", "yomiuri.co.jp", "nikkei.com", 
+        "sankei.com", "mainichi.jp", "jiji.com", "kyodo.co.jp", 
+        "nikkan.co.jp", "toyokeizai.net", "diamond.jp", "itmedia.co.jp", 
+        "huffingtonpost.jp"
+    ]
+    # ドメインリストをカンマ区切りの文字列に変換
+    domains_string = ",".join(trusted_domains)
     # パラメータ設定
     params = {
         "q": key_word,
@@ -28,8 +36,9 @@ def news_get(api_key, categories):
         "to": to_time,         # 終了日時
         "sortBy": "relevancy",               # ソート順
         "pageSize": 10,                       # 取得件数
-        "apiKey": api_key
-    }
+        "apiKey": api_key,
+        "domains": domains_string
+                }
 
     # APIリクエスト
     response = requests.get(BASE_URL, params=params)

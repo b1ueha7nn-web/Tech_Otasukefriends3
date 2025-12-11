@@ -240,7 +240,7 @@ st.markdown("""
 
 /* ボタン - 春の花びら */
 div.stButton > button {
-    background: linear-gradient(135deg, #FFB6C1, #FFCCE0, #FFD4E5) !important;
+    background: linear-gradient(135deg, #FF69B4, #FF85C1, #FFA0D0) !important;
     color: #FFFFFF !important;
     border: none !important;
     border-radius: 20px !important;
@@ -248,14 +248,14 @@ div.stButton > button {
     font-size: 16px !important;
     padding: 16px 40px !important;
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    box-shadow: 0 8px 20px rgba(255, 182, 193, 0.3) !important;
+    box-shadow: 0 8px 20px rgba(255, 105, 180, 0.4) !important;
     letter-spacing: 1px !important;
 }
 
 div.stButton > button:hover {
-    background: linear-gradient(135deg, #FFA0B4, #FFB6C1, #FFCCE0) !important;
+    background: linear-gradient(135deg, #FF1493, #FF69B4, #FF85C1) !important;
     transform: translateY(-4px) scale(1.05) !important;
-    box-shadow: 0 12px 30px rgba(255, 182, 193, 0.4) !important;
+    box-shadow: 0 12px 30px rgba(255, 105, 180, 0.5) !important;
 }
 
 div.stButton > button:active {
@@ -362,7 +362,7 @@ def render_header():
 # ======================================
 # プログレスバー　設定画面
 # ======================================
-def render_progress(step: int, total: int = 4):
+def render_progress(step: int, total: int = 3):
     ratio = int(100 * step / total)
     st.markdown(
         f"""
@@ -513,8 +513,14 @@ def render_dashboard():
                 <div style="font-size:72px; line-height:1;">{icon}</div>
                 <div>
                     <div style="font-size:16px; color:#666; margin-bottom:4px;">【{home_pref}】</div>
-                    <div style="font-size:48px; font-weight:700; color:#FF6347; line-height:1;"> {temp_max}°</div>
-                    <div style="font-size:16px; color:#888; margin-top:4px;">最低気温 {temp_min}°</div>
+                    <div style="margin-bottom:8px;">
+                        <div style="font-size:14px; color:#888;">最高気温</div>
+                        <div style="font-size:48px; font-weight:700; color:#FF6347; line-height:1;">{temp_max}°</div>
+                    </div>
+                    <div style="margin-bottom:8px;">
+                        <div style="font-size:14px; color:#888;">最低気温</div>
+                        <div style="font-size:48px; font-weight:700; color:#4682B4; line-height:1;">{temp_min}°</div>
+                    </div>
                     <div style="font-size:15px; color:#666; margin-top:4px;">降水確率 {pop}%</div>
                 </div>
             </div>
@@ -595,7 +601,7 @@ def render_dashboard():
 # ======================================
 # メイン処理
 # ======================================
-TOTAL_STEPS = 4
+TOTAL_STEPS = 3
 
 def onboarding_screen():
     st.title("OTASUKE")
@@ -607,9 +613,9 @@ def onboarding_screen():
         step_birthdate()
     elif step == 2:
         step_home_region()
+    # elif step == 3:
+    #     step_work_region()
     elif step == 3:
-        step_work_region()
-    elif step == 4:
         step_categories()
 
     # ナビゲーションボタン
@@ -797,7 +803,7 @@ def reset_password_screen():
 def send_reset_email(email: str):
     """Supabase の機能でパスワードリセットメールを送る"""
     try:
-        supabase.auth.reset_password_for_email(
+        supabase.auth.reset_password_email(
             email,
             {
                 # ★本番の Streamlit の URL に合わせて変更する
@@ -838,15 +844,31 @@ def main():
         # 少し古いバージョンの場合
         params = st.experimental_get_query_params()
 
+    # ---------- ① mode の取得 ----------
     mode = ""
-    if params is not None:
-        value = params.get("mode")  # dict でも QueryParams でも get は使える想定
+    if isinstance(params, dict) and "mode" in params:
+        value = params["mode"]
         if isinstance(value, list):
-            # experimental_get_query_params() の場合は ['reset'] みたいなリスト
-            mode = value[0] if value else ""
+            mode = value[0]
         elif isinstance(value, str):
-            # query_params の場合は 'reset'
             mode = value
+
+    # ---------- ② code の取得（ここを追加） ----------
+    code = ""
+    if isinstance(params, dict) and "code" in params:
+        value = params["code"]
+        if isinstance(value, list):
+            code = value[0]
+        elif isinstance(value, str):
+            code = value
+
+    # ---------- ③ code があればセッションを作る（ここを追加） ----------
+    if code:
+        try:
+            supabase.auth.exchange_code_for_session({"auth_code": code})
+            # ここで一時的に「このユーザーとしてログインした」状態になる
+        except Exception as e:
+            st.error(f"パスワード再設定用のセッション作成中にエラーが発生しました: {e}")
 
     # ★ mode=reset のときはパスワード再設定ページへ
     if mode == "reset":
