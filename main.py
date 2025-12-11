@@ -68,6 +68,7 @@ def load_settings_from_supabase():
     if res.data:
         row = res.data
         st.session_state.settings = {
+            "email":row.get("email"),
             "birth_year":  row.get("birth_year"),
             "birth_month": row.get("birth_month"),
             "birth_day":   row.get("birth_day"),
@@ -591,17 +592,26 @@ def render_dashboard():
             url=articles[i]["url"],
             help="クリックすると記事の詳細ページに移動します"
         )
+
+    # supabase.table("users").insert({
+    #             "auth_user_id":st.session_state.settings["auth_user_id"],
+    #             "email":st.session_state.settings["email"],
+    #             "birth_year": st.session_state.settings["birth_year"], 
+    #             "birth_month": st.session_state.settings["birth_month"],
+    #             "birth_day":st.session_state.settings["birth_day"],
+    #             "home_pref":st.session_state.settings["home_pref"],
+    #             "categories":st.session_state.settings["categories"]
+    #             # その他、初期プロフィール情報など
+    #         }).execute()
     
-    supabase.table("users").insert({
-                "auth_user_id":st.session_state.settings["auth_user_id"],
-                "email":st.session_state.settings["email"],
-                "birth_year": st.session_state.settings["birth_year"], # 認証IDを外部キーとして保存
-                "birth_month": st.session_state.settings["birth_month"],
-                "birth_day":st.session_state.settings["birth_day"],
-                "home_pref":st.session_state.settings["home_pref"],
-                "categories":st.session_state.settings["categories"]
-                # その他、初期プロフィール情報など
-            }).execute()
+        supabase.table('users').update({
+                    "birth_year": st.session_state.settings["birth_year"], 
+                    "birth_month": st.session_state.settings["birth_month"],
+                    "birth_day":st.session_state.settings["birth_day"],
+                    "home_pref":st.session_state.settings["home_pref"],
+                    "categories":st.session_state.settings["categories"]}).eq(
+        'email', st.session_state.settings["email"]
+    ).execute()
     # ======================================
     # 設定に戻るボタン
     # ======================================
@@ -679,6 +689,11 @@ def sign_up(email, password):
             
             st.session_state.settings["auth_user_id"] = auth_user_id
             st.session_state.settings["email"] = email
+
+            supabase.table("users").insert({
+                "auth_user_id":st.session_state.settings["auth_user_id"],
+                "email":st.session_state.settings["email"]
+            }).execute()
 
             return auth_response
             
@@ -765,6 +780,7 @@ def auth_screen():
             #Dashboardへ遷移
             st.session_state.page = "dashboard"
             st.rerun()
+
     
     #======================================
     #サインアップ処理
@@ -776,6 +792,7 @@ def auth_screen():
             #オンボーディングへ遷移
             st.session_state.page = "onboarding"
             st.rerun()
+
         # st.session_state.page = "onboarding"
         # st.rerun()
 
@@ -892,7 +909,6 @@ def main():
     # ★ mode=reset のときはパスワード再設定ページへ
     if mode == "reset":
         st.session_state.page = "reset_password"
-
     # 画面遷移
     if st.session_state.page == "auth":
         auth_screen()
