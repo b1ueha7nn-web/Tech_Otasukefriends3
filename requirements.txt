@@ -1,4 +1,4 @@
 streamlit
 python-dotenv
-supabase-py
+supabase==2.24.0
 requests
